@@ -1,0 +1,1005 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flutre Bipartite Network - Medieval French Sources & Places - work in progress</title>
+    <!-- Tailwind CSS for sleek UI styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- D3.js v7 for Physics Simulation & Interactive Canvas/SVG -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+            overflow: hidden;
+        }
+        /* Canvas glassmorphism panel */
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.82);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.6);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.4);
+        }
+    </style>
+</head>
+<body class="w-screen h-screen flex relative select-none">
+
+    <!-- Network Container (SVG Layer) -->
+    <div id="network-container" class="w-full h-full absolute inset-0 cursor-grab active:cursor-grabbing">
+        <svg id="network-svg" class="w-full h-full"></svg>
+    </div>
+
+    <!-- Header / Branding Overlay -->
+    <div class="absolute top-4 left-4 z-10 glass-panel p-4 rounded-xl max-w-md shadow-2xl pointer-events-auto">
+        <div class="flex items-center space-x-3 mb-1">
+            <div class="p-2 rounded-lg bg-blue-500/20 text-blue-400">
+                <i data-lucide="network" class="w-6 h-6"></i>
+            </div>
+            <div>
+                <h1 class="text-lg font-bold text-white leading-tight">Flutre Bipartite Network</h1>
+                <p class="text-xs text-slate-400">Medieval French Sources & Disambiguated Places</p>
+            </div>
+        </div>
+        <p class="text-xs text-slate-300 mt-2 leading-relaxed">
+            Interactive visualization mapping sources (*Chansons de geste*, Arthurian romances) to standardized place entities extracted from L.-F. Flutre's dictionary (partial data from the letter A).
+        </p>
+    </div>
+
+    <!-- Control Panel Sidebar -->
+    <div class="absolute top-4 right-4 z-10 glass-panel p-5 rounded-xl w-80 shadow-2xl space-y-5 pointer-events-auto max-h-[calc(100vh-2rem)] overflow-y-auto">
+        
+        <div class="flex justify-between items-center border-b border-slate-700/60 pb-3">
+            <h2 class="font-semibold text-sm text-slate-200 flex items-center gap-2">
+                <i data-lucide="sliders" class="w-4 h-4 text-blue-400"></i> Network Controls
+            </h2>
+            <button id="reset-view-btn" class="p-1.5 text-xs bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300 transition flex items-center gap-1">
+                <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i> Reset
+            </button>
+        </div>
+
+        <!-- Search / Filter -->
+        <div class="space-y-1.5">
+            <label class="text-xs font-medium text-slate-300 flex items-center gap-1.5">
+                <i data-lucide="search" class="w-3.5 h-3.5 text-blue-400"></i> Search Node / Variant
+            </label>
+            <div class="relative">
+                <input type="text" id="search-input" placeholder="e.g. Alemagne, Brut, Aise..."
+                       class="w-full bg-slate-900/80 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition">
+                <button id="clear-search" class="absolute right-2.5 top-2.5 text-slate-500 hover:text-slate-300 hidden">
+                    <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Minimum Degree Filter -->
+        <div class="space-y-2">
+            <div class="flex justify-between items-center text-xs">
+                <span class="font-medium text-slate-300 flex items-center gap-1.5">
+                    <i data-lucide="filter" class="w-3.5 h-3.5 text-orange-400"></i> Min Degree Filter
+                </span>
+                <span id="degree-value" class="font-mono bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded text-[11px]">1</span>
+            </div>
+            <input type="range" id="degree-slider" min="1" max="10" value="1" step="1" 
+                   class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500">
+        </div>
+
+        <!-- Toggles -->
+        <div class="space-y-3 pt-2 border-t border-slate-700/60">
+            <label class="flex items-center justify-between cursor-pointer">
+                <span class="text-xs text-slate-300 flex items-center gap-2">
+                    <i data-lucide="type" class="w-3.5 h-3.5 text-slate-400"></i> Show Labels
+                </span>
+                <input type="checkbox" id="toggle-labels" checked class="sr-only peer">
+                <div class="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600 relative"></div>
+            </label>
+
+            <label class="flex items-center justify-between cursor-pointer">
+                <span class="text-xs text-slate-300 flex items-center gap-2">
+                    <i data-lucide="zap" class="w-3.5 h-3.5 text-slate-400"></i> Physics Simulation
+                </span>
+                <input type="checkbox" id="toggle-physics" checked class="sr-only peer">
+                <div class="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600 relative"></div>
+            </label>
+        </div>
+
+        <!-- Legend -->
+        <div class="space-y-2 pt-3 border-t border-slate-700/60">
+            <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Node Types</span>
+            <div class="flex items-center space-x-3 text-xs text-slate-300">
+                <span class="w-3.5 h-3.5 rounded-full bg-[#2B5B84] border border-blue-300 inline-block"></span>
+                <span>Sources (Texts)</span>
+            </div>
+            <div class="flex items-center space-x-3 text-xs text-slate-300">
+                <span class="w-3.5 h-3.5 rounded-full bg-[#D95F02] border border-amber-300 inline-block"></span>
+                <span>Disambiguated Places</span>
+            </div>
+        </div>
+
+        <!-- Summary Stats -->
+        <div class="pt-3 border-t border-slate-700/60 grid grid-cols-2 gap-2 text-center">
+            <div class="bg-slate-900/60 p-2 rounded-lg">
+                <div id="stat-nodes" class="text-base font-bold text-blue-400">0</div>
+                <div class="text-[10px] text-slate-400">Active Nodes</div>
+            </div>
+            <div class="bg-slate-900/60 p-2 rounded-lg">
+                <div id="stat-edges" class="text-base font-bold text-amber-400">0</div>
+                <div class="text-[10px] text-slate-400">Active Connections</div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Zoom Controls -->
+    <div class="absolute bottom-6 right-6 z-10 flex flex-col space-y-2 glass-panel p-1.5 rounded-xl shadow-2xl pointer-events-auto">
+        <button id="zoom-in" class="p-2 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition" title="Zoom In">
+            <i data-lucide="plus" class="w-5 h-5"></i>
+        </button>
+        <button id="zoom-out" class="p-2 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition" title="Zoom Out">
+            <i data-lucide="minus" class="w-5 h-5"></i>
+        </button>
+        <button id="zoom-fit" class="p-2 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition" title="Fit Screen">
+            <i data-lucide="maximize" class="w-5 h-5"></i>
+        </button>
+    </div>
+
+    <!-- Hover Card / Inspector Panel -->
+    <div id="tooltip" class="absolute z-20 glass-panel p-4 rounded-xl max-w-sm shadow-2xl border border-blue-500/30 opacity-0 pointer-events-none transition-opacity duration-200 text-xs">
+        <div id="tooltip-header" class="font-bold text-sm text-white mb-1 flex items-center gap-2"></div>
+        <div id="tooltip-body" class="space-y-1.5 text-slate-300"></div>
+    </div>
+
+    <!-- JavaScript Dataset and D3 Engine -->
+    <script>
+        // --- 1. EXTRACTED DATASET FROM FLUTRE DICTIONARY (PAGES 192, 193, ETC.) ---
+        const rawEdges = [
+            { source: "src_floriant", place: "place_abanie", variant: "Abanie" },
+            { source: "src_perl", place: "place_abanie", variant: "Abanie" },
+            { source: "src_graal_pr", place: "place_abarimacia", variant: "Abarimacia" },
+            { source: "src_percef", place: "place_abarimacia", variant: "Abarimacia" },
+            { source: "src_sone", place: "place_abarimacia", variant: "Abarimhatie" },
+            { source: "src_saintre", place: "place_abecot", variant: "Abecot" },
+            { source: "src_fouke", place: "place_aberconewey", variant: "Aberconewey" },
+            { source: "src_meliador", place: "place_aberdane", variant: "Aberdane" },
+            { source: "src_percef", place: "place_abermal", variant: "Abermal / Brandeval" },
+            { source: "src_troie", place: "place_abidie", variant: "Abidie" },
+            { source: "src_alex", place: "place_abilac", variant: "Abilac" },
+            { source: "src_alex", place: "place_abilam", variant: "Abilam" },
+            { source: "src_ber", place: "place_abilam", variant: "Abillan" },
+            { source: "src_cristal", place: "place_abilam", variant: "Abilant" },
+            { source: "src_percef", place: "place_abilam", variant: "Abilant" },
+            { source: "src_alex", place: "place_abilance", variant: "Abilance" },
+            { source: "src_alex", place: "place_abilos", variant: "Abilos" },
+            { source: "src_fouke", place: "place_abindone", variant: "Abindone" },
+            { source: "src_proph_m", place: "place_abiron", variant: "Abiron" },
+            { source: "src_troie", place: "place_abisme", variant: "Abisme" },
+            { source: "src_proph_m", place: "place_abisme", variant: "Basme" },
+            { source: "src_veng", place: "place_abriande", variant: "Abriande" },
+            { source: "src_troie", place: "place_acale", variant: "Achaïe / Acale" },
+            { source: "src_proph_m", place: "place_acaron", variant: "Acaron" },
+            { source: "src_proph_m", place: "place_acerge", variant: "Acerge" },
+            { source: "src_brut", place: "place_achalon", variant: "Achalon" },
+            { source: "src_rose", place: "place_acheron", variant: "Acheron" },
+            { source: "src_thebes", place: "place_acheron", variant: "Acheron" },
+            { source: "src_blanc", place: "place_achopart", variant: "Achopart" },
+            { source: "src_thebes", place: "place_achopart", variant: "Açopart" },
+            { source: "src_gilles", place: "place_achre", variant: "Achre" },
+            { source: "src_floire_ii", place: "place_acianon", variant: "Acianon" },
+            { source: "src_brut", place: "place_aclud", variant: "Aclud" },
+            { source: "src_mort", place: "place_acohen", variant: "Acohen" },
+            { source: "src_alex_dec_v", place: "place_acre_1", variant: "Acre" },
+            { source: "src_ber", place: "place_acre_1", variant: "Acre" },
+            { source: "src_claris", place: "place_acre_1", variant: "Acre" },
+            { source: "src_couci", place: "place_acre_1", variant: "Acre" },
+            { source: "src_defur", place: "place_acre_1", variant: "Acre" },
+            { source: "src_esc", place: "place_acre_1", variant: "Acre" },
+            { source: "src_escan", place: "place_acre_1", variant: "Acre" },
+            { source: "src_flore", place: "place_acre_1", variant: "Acre" },
+            { source: "src_gilion", place: "place_acre_1", variant: "Acre" },
+            { source: "src_gilles", place: "place_acre_1", variant: "Acre" },
+            { source: "src_meliacin", place: "place_acre_1", variant: "Acre" },
+            { source: "src_pont", place: "place_acre_1", variant: "Acre" },
+            { source: "src_trist_b", place: "place_acre_1", variant: "Acaron / Aquaron" },
+            { source: "src_ber", place: "place_acre_2", variant: "Acre (pays)" },
+            { source: "src_isaie", place: "place_acre_3", variant: "Acre (chastel)" },
+            { source: "src_trist_pr", place: "place_adimpons", variant: "Adimpons" },
+            { source: "src_isaie", place: "place_admenal", variant: "Admenal" },
+            { source: "src_troie", place: "place_adriaticon", variant: "Adriaticon" },
+            { source: "src_melus", place: "place_aes", variant: "Aes" },
+            { source: "src_alex_dec_v", place: "place_african", variant: "African" },
+            { source: "src_florence", place: "place_african", variant: "African" },
+            { source: "src_gilion", place: "place_african", variant: "Affricquans" },
+            { source: "src_paon", place: "place_african", variant: "African" },
+            { source: "src_percef", place: "place_african", variant: "African" },
+            { source: "src_athis", place: "place_african", variant: "Auffrican" },
+            { source: "src_cleom", place: "place_african", variant: "Auffrican" },
+            { source: "src_alex_dec_a", place: "place_africe_1", variant: "Africe / Afrique" },
+            { source: "src_alex_dec_v", place: "place_africe_1", variant: "Africa" },
+            { source: "src_clig", place: "place_africe_1", variant: "Aufrique" },
+            { source: "src_florim", place: "place_africe_1", variant: "Africe" },
+            { source: "src_isaie", place: "place_africe_1", variant: "Africe" },
+            { source: "src_paon", place: "place_africe_1", variant: "Aufrique" },
+            { source: "src_percef", place: "place_africe_1", variant: "Africe" },
+            { source: "src_proth", place: "place_africe_1", variant: "Africe" },
+            { source: "src_saintre", place: "place_africe_1", variant: "Africe" },
+            { source: "src_thebes", place: "place_africe_1", variant: "Africe" },
+            { source: "src_trist_pr", place: "place_africe_1", variant: "Africe" },
+            { source: "src_warew", place: "place_africe_1", variant: "Africe" },
+            { source: "src_athis", place: "place_africe_1", variant: "Aufrique" },
+            { source: "src_blanc", place: "place_africe_1", variant: "Aufrique" },
+            { source: "src_claris", place: "place_africe_1", variant: "Aufrique" },
+            { source: "src_eracle", place: "place_africe_1", variant: "Aufrique" },
+            { source: "src_florence", place: "place_africe_1", variant: "Aufrique" },
+            { source: "src_floriant", place: "place_africe_1", variant: "Aufrique" },
+            { source: "src_gilion", place: "place_africe_1", variant: "Aufrique" },
+            { source: "src_guig", place: "place_africe_1", variant: "Aufrique" },
+            { source: "src_laur", place: "place_africe_1", variant: "Aufrique" },
+            { source: "src_parton", place: "place_africe_1", variant: "Aufrique" },
+            { source: "src_proph_m", place: "place_africe_1", variant: "Aufrique" },
+            { source: "src_sone", place: "place_africe_1", variant: "Aufrique" },
+            { source: "src_troie", place: "place_africe_1", variant: "Aufrique" },
+            { source: "src_veng", place: "place_africe_1", variant: "Aufrique" },
+            { source: "src_florence", place: "place_africe_2", variant: "Aufrique (Cité)" },
+            { source: "src_florim", place: "place_africe_2", variant: "Afrique" },
+            { source: "src_gilion", place: "place_africe_2", variant: "Auffrique" },
+            { source: "src_saintre", place: "place_africe_2", variant: "Afrique" },
+            { source: "src_graal_pr", place: "place_agais", variant: "Agais / Agués" },
+            { source: "src_athis", place: "place_agamaratés", variant: "Agamaratés / Agramantés" },
+            { source: "src_isaie", place: "place_agimal", variant: "Agimal" },
+            { source: "src_lanc_pr", place: "place_aglode", variant: "Aglode / Aglonde" },
+            { source: "src_rtr", place: "place_aglode", variant: "Agloride" },
+            { source: "src_troie", place: "place_aglus", variant: "Aglus / Agluz / Acluç" },
+            { source: "src_brut", place: "place_agned", variant: "Agned (mont)" },
+            { source: "src_cleom", place: "place_agrapine", variant: "Agrapine" },
+            { source: "src_troie", place: "place_agreste", variant: "Agreste / Adrestia" },
+            { source: "src_troie_pr", place: "place_agreste", variant: "Gresse / Argistre" },
+            { source: "src_trist_pr", place: "place_agu", variant: "Agu (Chastel)" },
+            { source: "src_perl", place: "place_aguille", variant: "Aguille / Anguille" },
+            { source: "src_flore", place: "place_aighe_morte", variant: "Aighe-Morte" },
+            { source: "src_mag", place: "place_aighe_morte", variant: "Aigues-Mortes" },
+            { source: "src_paris", place: "place_aighe_morte", variant: "Aigues-Mortes" },
+            { source: "src_rig", place: "place_aiglentier", variant: "Aiglentier" },
+            { source: "src_trist_pr", place: "place_aigleval", variant: "Aigleval / Aigreval" },
+            { source: "src_melus", place: "place_aiglon", variant: "Aiglon / Tour des Aigles" },
+            { source: "src_veng", place: "place_aigramors", variant: "Aigramors / Gremors" },
+            { source: "src_isaie", place: "place_aigremoire", variant: "Aigremoire" },
+            { source: "src_lanc_pr", place: "place_aigue_de_la_forest", variant: "Aigue de la Forest" },
+            { source: "src_escan", place: "place_aigues", variant: "Aigues (les)" },
+            { source: "src_alex_dec_a", place: "place_ailer", variant: "Ailer" },
+            { source: "src_galer", place: "place_aine", variant: "Aine" },
+            { source: "src_melus", place: "place_aine", variant: "Aisne / Esne" },
+            { source: "src_melus", place: "place_ainnelle", variant: "Ainnelle / Melle" },
+            { source: "src_wist", place: "place_aire_1", variant: "Aire-sur-la-Lys" },
+            { source: "src_gilles", place: "place_aire_2", variant: "Aire / Eres" },
+            { source: "src_melus", place: "place_ais", variant: "Ais / Aes" },
+            { source: "src_veng", place: "place_ais", variant: "Ais" },
+            { source: "src_trist_pr", place: "place_ais", variant: "Ais en Pichardie" },
+            { source: "src_alex", place: "place_aise_1", variant: "Aise" },
+            { source: "src_alex_dec_a", place: "place_aise_1", variant: "Aise" },
+            { source: "src_alex_dec_v", place: "place_aise_1", variant: "Aisa" },
+            { source: "src_paon", place: "place_aise_1", variant: "Aize / Asie" },
+            { source: "src_troie", place: "place_aise_1", variant: "Aise" },
+            { source: "src_parton", place: "place_aise_1", variant: "la Grant Aise" },
+            { source: "src_saintre", place: "place_aise_1", variant: "Asie la Majour" },
+            { source: "src_parton", place: "place_aisie", variant: "Aisie" },
+            { source: "src_sone", place: "place_aisie", variant: "Aisie" },
+            { source: "src_merl_s", place: "place_aisurne", variant: "Aisurne" },
+            { source: "src_tournoi", place: "place_aix", variant: "Aix / Aixe / Ex" },
+            { source: "src_melus", place: "place_aixi", variant: "Aixi / Aci / Auxi" },
+            { source: "src_perc_cont", place: "place_akenparcoretin", variant: "Akenparcoretin" },
+            { source: "src_percef", place: "place_aklon", variant: "Aklon / Akalon" },
+            { source: "src_athis", place: "place_alaine", variant: "Alaine" },
+            { source: "src_flam", place: "place_alamainna", variant: "Alamainna" },
+            { source: "src_arles", place: "place_alamainna", variant: "Alamania" },
+            { source: "src_arles", place: "place_alamans", variant: "Alamans (les)" },
+            { source: "src_thebes", place: "place_alan", variant: "Alan (gué d')" },
+            { source: "src_saintre", place: "place_alapie", variant: "Alapie" },
+            { source: "src_brut", place: "place_albaine", variant: "Albaine" },
+            { source: "src_florim", place: "place_albanie_1", variant: "Albanie" },
+            { source: "src_melus", place: "place_albanie_1", variant: "Albenie" },
+            { source: "src_mil", place: "place_albanie_1", variant: "Albanie" },
+            { source: "src_percef", place: "place_albanie_1", variant: "Arban" },
+            { source: "src_perl", place: "place_albanie_1", variant: "Aubanie" },
+            { source: "src_gilion", place: "place_albanie_2", variant: "Albanie" },
+            { source: "src_nouv", place: "place_albanie_3", variant: "Albanie" },
+            { source: "src_mag", place: "place_albara", variant: "Albara" },
+            { source: "src_jaufre", place: "place_albarua", variant: "Albarua" },
+            { source: "src_en", place: "place_albe_1", variant: "Albe" },
+            { source: "src_trist_pr", place: "place_albe_2", variant: "Albe" },
+            { source: "src_brut", place: "place_albe_3", variant: "Albe / Alba" },
+            { source: "src_eledus", place: "place_albe_espine", variant: "Albe Espine" },
+            { source: "src_brut", place: "place_albelunges", variant: "Albelunges" },
+            { source: "src_proph_m", place: "place_albenges", variant: "Albenges / Aberenge" },
+            { source: "src_fouke", place: "place_alberburs", variant: "Alberburs / Shropshire" },
+            { source: "src_parton", place: "place_albiges", variant: "Albigés" },
+            { source: "src_nouv", place: "place_albine_1", variant: "Albine" },
+            { source: "src_proph_m", place: "place_albine_2", variant: "Albine" },
+            { source: "src_trist_pr", place: "place_albine_2", variant: "Albisme" },
+            { source: "src_nouv", place: "place_albins", variant: "Albins (les)" },
+            { source: "src_brut", place: "place_albion", variant: "Albion" },
+            { source: "src_percef", place: "place_albion", variant: "Albion" },
+            { source: "src_trist_pr", place: "place_albion", variant: "Albion" },
+            { source: "src_proph_m", place: "place_albrac", variant: "Albrac" },
+            { source: "src_alex", place: "place_ale", variant: "Ale / El Akaba" },
+            { source: "src_trist_pr", place: "place_aledon", variant: "Aledon" },
+            { source: "src_alex_dec_v", place: "place_aleise", variant: "Aleise" },
+            { source: "src_alex", place: "place_alemagne", variant: "Alemagne" },
+            { source: "src_alex_dec_a", place: "place_alemagne", variant: "Alemagne" },
+            { source: "src_amadas", place: "place_alemagne", variant: "Alemagne" },
+            { source: "src_anjou", place: "place_alemagne", variant: "Alemagne" },
+            { source: "src_artur", place: "place_alemagne", variant: "Alemagne" },
+            { source: "src_atre", place: "place_alemagne", variant: "Alemagne" },
+            { source: "src_aucas", place: "place_alemagne", variant: "Alemagne" },
+            { source: "src_brun", place: "place_alemagne", variant: "Alemagne" },
+            { source: "src_brut", place: "place_alemagne", variant: "Alemagne" },
+            { source: "src_claris", place: "place_alemagne", variant: "Alemagne" },
+            { source: "src_cleom", place: "place_alemagne", variant: "Alemagne" },
+            { source: "src_clig", place: "place_alemagne", variant: "Alemagne" },
+            { source: "src_couci", place: "place_alemagne", variant: "Alemagne" },
+            { source: "src_erec", place: "place_alemagne", variant: "Alemagne" },
+            { source: "src_escan", place: "place_alemagne", variant: "Alemagne" },
+            { source: "src_florence", place: "place_alemagne", variant: "Alemagne" },
+            { source: "src_florim", place: "place_alemagne", variant: "Alemagne" },
+            { source: "src_gilion", place: "place_alemagne", variant: "Alemagne" },
+            { source: "src_gilles", place: "place_alemagne", variant: "Alemagne" },
+            { source: "src_graal_pr", place: "place_alemagne", variant: "Alemagne" },
+            { source: "src_ider", place: "place_alemagne", variant: "Alemagne" },
+            { source: "src_ipom", place: "place_alemagne", variant: "Alemagne" },
+            { source: "src_isaie", place: "place_alemagne", variant: "Alemagne" },
+            { source: "src_lanc_pr", place: "place_alemagne", variant: "Alemagne" },
+            { source: "src_melus", place: "place_alemagne", variant: "Alemagne" },
+            { source: "src_paon", place: "place_alemagne", variant: "Alemagne" },
+            { source: "src_paris", place: "place_alemagne", variant: "Alemagne" },
+            { source: "src_parton", place: "place_alemagne", variant: "Alemagne" },
+            { source: "src_percef", place: "place_alemagne", variant: "Alemagne" },
+            { source: "src_proph_m", place: "place_alemagne", variant: "Almongne" },
+            { source: "src_queste", place: "place_alemagne", variant: "Alemagne" },
+            { source: "src_rich", place: "place_alemagne", variant: "Alemagne" },
+            { source: "src_rose", place: "place_alemagne", variant: "Alemagne" },
+            { source: "src_sone", place: "place_alemagne", variant: "Alemagne" },
+            { source: "src_tournoi", place: "place_alemagne", variant: "Alemagne" },
+            { source: "src_troie", place: "place_alemagne", variant: "Alemagne" },
+            { source: "src_warew", place: "place_alemagne", variant: "Alemagne" },
+            { source: "src_saintre", place: "place_alemagne", variant: "Almaigne" },
+            { source: "src_alex_dec_v", place: "place_aleman", variant: "Aleman" },
+            { source: "src_ber", place: "place_aleman", variant: "Aleman" },
+            { source: "src_blanc_chev", place: "place_aleman", variant: "Aleman" },
+            { source: "src_clig", place: "place_aleman", variant: "Aleman" },
+            { source: "src_erec", place: "place_aleman", variant: "Aleman" },
+            { source: "src_galer", place: "place_aleman", variant: "Aleman" },
+            { source: "src_gilles", place: "place_aleman", variant: "Aleman" },
+            { source: "src_ider", place: "place_aleman", variant: "Aleman" },
+            { source: "src_ipom", place: "place_aleman", variant: "Aleman" },
+            { source: "src_meliador", place: "place_aleman", variant: "Aleman" },
+            { source: "src_melus", place: "place_aleman", variant: "Aleman" },
+            { source: "src_parton", place: "place_aleman", variant: "Aleman" },
+            { source: "src_percef", place: "place_aleman", variant: "Aleman" },
+            { source: "src_proph_m", place: "place_aleman", variant: "Aleman" },
+            { source: "src_saintre", place: "place_aleman", variant: "Allmans" },
+            { source: "src_thebes", place: "place_alemandie", variant: "Alemandie" },
+            { source: "src_nouv", place: "place_alement", variant: "Alement" },
+            { source: "src_defur", place: "place_alencon", variant: "Alençon" },
+            { source: "src_saintre", place: "place_alencon", variant: "Alençon" },
+            { source: "src_paris", place: "place_alencon", variant: "Alençon" },
+            { source: "src_alex", place: "place_alenie_1", variant: "Alenie" },
+            { source: "src_artur", place: "place_alenie_2", variant: "Alenie" },
+            { source: "src_alex", place: "place_alentis", variant: "Alentis" },
+            { source: "src_lanc_pr", place: "place_alentive", variant: "Alentive" },
+            { source: "src_athis", place: "place_alerie", variant: "Alerie" },
+            { source: "src_alex", place: "place_ales", variant: "Ales" },
+            { source: "src_florence", place: "place_alesandre", variant: "Alesandre" },
+            { source: "src_g_de_d", place: "place_aleschans", variant: "Aleschans" },
+            { source: "src_alex_dec_v", place: "place_alesse", variant: "Alesse" },
+            { source: "src_gilion", place: "place_alexandre_1", variant: "Alexandrie" },
+            { source: "src_mag", place: "place_alexandre_1", variant: "Alexandre" },
+            { source: "src_paon", place: "place_alexandre_1", variant: "Alixandre" },
+            { source: "src_jaufre", place: "place_alexandre_1", variant: "Alisandre" },
+            { source: "src_alex", place: "place_alexandre_1", variant: "Alixandre" },
+            { source: "src_bel_i", place: "place_alexandre_1", variant: "Alixandre" },
+            { source: "src_blanc", place: "place_alexandre_1", variant: "Alixandre" },
+            { source: "src_diable", place: "place_alexandre_1", variant: "Alixandre" },
+            { source: "src_dolop", place: "place_alexandre_1", variant: "Alixandre" },
+            { source: "src_erec", place: "place_alexandre_1", variant: "Alixandre" },
+            { source: "src_fauvel", place: "place_alexandre_1", variant: "Alixandre" },
+            { source: "src_fouke", place: "place_alexandre_1", variant: "Alixandre" },
+            { source: "src_graal_pr", place: "place_alexandre_1", variant: "Alixandre" },
+            { source: "src_parton", place: "place_alexandre_1", variant: "Alixandre" },
+            { source: "src_perc", place: "place_alexandre_1", variant: "Alixandre" },
+            { source: "src_rose", place: "place_alexandre_1", variant: "Alixandre" },
+            { source: "src_veng", place: "place_alexandre_1", variant: "Alixandre" },
+            { source: "src_warew", place: "place_alexandre_1", variant: "Alixandra" },
+            { source: "src_alex_dec_v", place: "place_alexandre_1", variant: "A. la Grant" },
+            { source: "src_alex", place: "place_alexandre_2", variant: "Alixandre en Frise" },
+            { source: "src_alex_dec_a", place: "place_alexandre_3", variant: "A. en Istria" },
+            { source: "src_alex", place: "place_alexandre_4", variant: "A. Montoise" },
+            { source: "src_alex", place: "place_alexandre_5", variant: "A. Porri (Inde)" },
+            { source: "src_veng", place: "place_alexandre_5", variant: "A. Porri" },
+            { source: "src_alex", place: "place_alexandre_6", variant: "A. Massagitas" }
+        ];
+
+        // Metadata mapping for Places
+        const placeMetadata = {
+            "place_abanie": { label: "Abanie", desc: "L'Écosse / Albanie" },
+            "place_abarimacia": { label: "Abarimacia", desc: "Arimathie" },
+            "place_abecot": { label: "Abecot", desc: "Pays-Bas" },
+            "place_aberconewey": { label: "Aberconewey", desc: "Aberconway (Carnarvonshire)" },
+            "place_aberdane": { label: "Aberdane", desc: "Aberdeen (Écosse)" },
+            "place_abermal": { label: "Abermal", desc: "Royaume de Dabermal / Brandeval" },
+            "place_abidie": { label: "Abidie", desc: "Région d'Abydos" },
+            "place_abilac": { label: "Abilac", desc: "Un lieu" },
+            "place_abilam": { label: "Abilam", desc: "Ville/Royaume d'Orient (Nebi-Abil)" },
+            "place_abilance": { label: "Abilance", desc: "Ville" },
+            "place_abilos": { label: "Abilos", desc: "Lieu près de Césarée" },
+            "place_abindone": { label: "Abindone", desc: "Abingdon (Berkshire)" },
+            "place_abiron": { label: "Abiron", desc: "Royaume de Gralisans" },
+            "place_abisme": { label: "Abisme", desc: "L'Abîme" },
+            "place_abriande": { label: "Abriande", desc: "Pays conquis par Alexandre" },
+            "place_acale": { label: "Acale", desc: "Achaïe (N.-O. du Péloponnèse)" },
+            "place_acaron": { label: "Acaron", desc: "Saint-Jean-d'Acre" },
+            "place_acerge": { label: "Acerge", desc: "Ville" },
+            "place_achalon": { label: "Achalon", desc: "Fleuve près de Troie" },
+            "place_acheron": { label: "Acheron", desc: "Fleuve des Enfers" },
+            "place_achopart": { label: "Achopart", desc: "Peuple païen (Éthiopiens)" },
+            "place_achre": { label: "Achre", desc: "Saint-Jean-d'Acre" },
+            "place_acianon": { label: "Acianon", desc: "Ville/Pays sarrasin" },
+            "place_aclud": { label: "Aclud", desc: "Dumbarton (Écosse)" },
+            "place_acohen": { label: "Acohen", desc: "Lieu" },
+            "place_acre_1": { label: "Acre (1°)", desc: "Saint-Jean-d'Acre" },
+            "place_acre_2": { label: "Acre (2°)", desc: "Pays d'Acre" },
+            "place_acre_3": { label: "Acre (3°)", desc: "Chastel d'Ardant" },
+            "place_adimpons": { label: "Adimpons", desc: "Château" },
+            "place_admenal": { label: "Admenal", desc: "Château sarrasin" },
+            "place_adriaticon": { label: "Adriaticon", desc: "Mer Adriatique" },
+            "place_aes": { label: "Aes", desc: "Aix-la-Chapelle" },
+            "place_african": { label: "African", desc: "Les Africains / Sarrasins" },
+            "place_africe_1": { label: "Africe (1°)", desc: "L'Afrique (continent)" },
+            "place_africe_2": { label: "Africe (2°)", desc: "Cité d'Afrique" },
+            "place_agais": { label: "Agais", desc: "Bois des Agais (Béthanie)" },
+            "place_agamaratés": { label: "Agamaratés", desc: "Pays des Garamantes" },
+            "place_agimal": { label: "Agimal", desc: "Ville ou royaume" },
+            "place_aglode": { label: "Aglode", desc: "Rivière près de Galefort" },
+            "place_aglus": { label: "Aglus", desc: "Lieu à Troie" },
+            "place_agned": { label: "Agned (mont)", desc: "Chastel as Pucelles (Édimbourg)" },
+            "place_agrapine": { label: "Agrapine", desc: "Ancien nom de Cologne" },
+            "place_agreste": { label: "Agreste", desc: "Petite Mysie / Propontide" },
+            "place_agu": { label: "Agu (Chastel)", desc: "En Cornouaille" },
+            "place_aguille": { label: "Aguille", desc: "Pont du Château du Graal" },
+            "place_aighe_morte": { label: "Aighe-Morte", desc: "Aigues-Mortes (Gard)" },
+            "place_aiglentier": { label: "Aiglentier", desc: "Royaume du Roi de l'Aiglentier" },
+            "place_aigleval": { label: "Aigleval", desc: "Lieu d'un tournoi" },
+            "place_aiglon": { label: "Aiglon", desc: "Tour près de La Rochelle" },
+            "place_aigramors": { label: "Aigramors", desc: "Royaume de Lincanor" },
+            "place_aigremoire": { label: "Aigremoire", desc: "Ville/Royaume de Lucan" },
+            "place_aigue_de_la_forest": { label: "Aigue de la Forest", desc: "Gué sous Roevent" },
+            "place_aigues": { label: "Aigues (les)", desc: "Domaine de Briant" },
+            "place_ailer": { label: "Ailer", desc: "Lieu" },
+            "place_aine": { label: "Aine", desc: "Rivière Aisne" },
+            "place_ainnelle": { label: "Ainnelle", desc: "Ville de Melle (Deux-Sèvres)" },
+            "place_aire_1": { label: "Aire (1°)", desc: "Aire-sur-la-Lys" },
+            "place_aire_2": { label: "Aire (2°)", desc: "Village de Belgique" },
+            "place_ais": { label: "Ais", desc: "Aix-la-Chapelle" },
+            "place_aise_1": { label: "Aise (1°)", desc: "L'Asie (Asie Mineure)" },
+            "place_aisie": { label: "Aisie", desc: "L'Asie" },
+            "place_aisurne": { label: "Aisurne", desc: "Rivière" },
+            "place_aix": { label: "Aix", desc: "Esch-sur-la-Sûre (Luxembourg)" },
+            "place_aixi": { label: "Aixi", desc: "Aix-en-Provence" },
+            "place_akenparcoretin": { label: "Akenparcoretin", desc: "Lieu" },
+            "place_aklon": { label: "Aklon", desc: "Fleuve de Grèce (Moscholo)" },
+            "place_alaine": { label: "Alaine", desc: "Lieu" },
+            "place_alamainna": { label: "Alamainna", desc: "L'Allemagne" },
+            "place_alamans": { label: "Alamans", desc: "Les Allemands" },
+            "place_alan": { label: "Alan (gué d')", desc: "Gué près de Thèbes" },
+            "place_alapie": { label: "Alapie", desc: "Pays d'Alep (Syrie)" },
+            "place_albaine": { label: "Albaine", desc: "L'Albanie ou Écosse" },
+            "place_albanie_1": { label: "Albanie (1°)", desc: "L'Écosse" },
+            "place_albanie_2": { label: "Albanie (2°)", desc: "L'Albanie (Balkans)" },
+            "place_albanie_3": { label: "Albanie (3°)", desc: "Pays des Albains (Latium)" },
+            "place_albara": { label: "Albara", desc: "Origine du comte Alvaro" },
+            "place_albarua": { label: "Albarua", desc: "Pays de Fellon" },
+            "place_albe_1": { label: "Albe (1°)", desc: "Ville du Latium" },
+            "place_albe_2": { label: "Albe (2°)", desc: "Forêt" },
+            "place_albe_3": { label: "Albe (3°)", desc: "L'Aube (rivière)" },
+            "place_albe_espine": { label: "Albe Espine", desc: "Pays des Amazones" },
+            "place_albelunges": { label: "Albelunges", desc: "Alba Longa" },
+            "place_albenges": { label: "Albenges", desc: "Ville ou pays" },
+            "place_alberburs": { label: "Alberburs", desc: "Alberbury (Shropshire)" },
+            "place_albiges": { label: "Albigés", desc: "Pays d'Albi" },
+            "place_albine_1": { label: "Albine (1°)", desc: "Ville d'Albe (Latium)" },
+            "place_albine_2": { label: "Albine (2°)", desc: "Ville du Léograis" },
+            "place_albins": { label: "Albins", desc: "Habitants d'Albe" },
+            "place_albion": { label: "Albion", desc: "Ancien nom de Grande-Bretagne" },
+            "place_albrac": { label: "Albrac", desc: "Château" },
+            "place_ale": { label: "Ale", desc: "Aïlat / El Akaba (Mer Rouge)" },
+            "place_aledon": { label: "Aledon", desc: "Forêt" },
+            "place_aleise": { label: "Aleise", desc: "Un pays" },
+            "place_alemagne": { label: "Alemagne", desc: "L'Allemagne" },
+            "place_aleman": { label: "Aleman", desc: "Les Allemands" },
+            "place_alemandie": { label: "Alemandie", desc: "Territoire d'Alabanda" },
+            "place_alement": { label: "Alement", desc: "Sézanne (Marne)" },
+            "place_alencon": { label: "Alençon", desc: "Alençon (Orne)" },
+            "place_alenie_1": { label: "Alenie (1°)", desc: "Pays des Alains (Caspienne)" },
+            "place_alenie_2": { label: "Alenie (2°)", desc: "Pays du père de Greu" },
+            "place_alentis": { label: "Alentis", desc: "Contrée lointaine" },
+            "place_alentive": { label: "Alentive", desc: "Cité de Galehot" },
+            "place_alerie": { label: "Alerie", desc: "Ville" },
+            "place_ales": { label: "Ales", desc: "Rocher près de Tyr" },
+            "place_alesandre": { label: "Alesandre", desc: "Alessandria della Paglia" },
+            "place_aleschans": { label: "Aleschans", desc: "Les Alyscamps (Arles)" },
+            "place_alesse": { label: "Alesse", desc: "Pays de Dan Clin" },
+            "place_alexandre_1": { label: "Alexandre (1°)", desc: "Alexandrie (Égypte)" },
+            "place_alexandre_2": { label: "Alexandre (2°)", desc: "Ville en Phrygie" },
+            "place_alexandre_3": { label: "Alexandre (3°)", desc: "Ville en Istrie" },
+            "place_alexandre_4": { label: "Alexandre (4°)", desc: "Ville en Orient" },
+            "place_alexandre_5": { label: "Alexandre (5°)", desc: "Ville dans l'Inde" },
+            "place_alexandre_6": { label: "Alexandre (6°)", desc: "Ville des Massagètes" }
+        };
+
+        // Source Friendly Names Mapping
+        const sourceMetadata = {
+            "src_alex": "Roman d'Alexandre",
+            "src_alex_dec_a": "Alexandre (Arsenal)",
+            "src_alex_dec_v": "Alexandre (Venise)",
+            "src_amadas": "Amadas et Ydoine",
+            "src_anjou": "Comte d'Anjou",
+            "src_arles": "Roman d'Arles",
+            "src_artur": "Livre d'Artur",
+            "src_athis": "Athis et Prophilias",
+            "src_atre": "Âtre Périlleux",
+            "src_aucas": "Aucassin et Nicolette",
+            "src_ber": "Bérinus",
+            "src_blanc": "Blancandin",
+            "src_blanc_chev": "Blanc Chevalier",
+            "src_brut": "Roman de Brut (Wace)",
+            "src_claris": "Claris et Laris",
+            "src_cleom": "Cléomadès",
+            "src_clig": "Cligés",
+            "src_couci": "Châtelain de Coucy",
+            "src_cristal": "Cristal et Clarie",
+            "src_defur": "Le Restor du Paon",
+            "src_diable": "Robert le Diable",
+            "src_dolop": "Dolopathos",
+            "src_eledus": "Eledus et Serene",
+            "src_en": "Énéas",
+            "src_eracle": "Éracles",
+            "src_erec": "Érec et Énode",
+            "src_esc": "L'Escoufle",
+            "src_escan": "Escanor",
+            "src_fauvel": "Roman de Fauvel",
+            "src_flam": "Flamenca",
+            "src_floire_i": "Floire et Blancheflor",
+            "src_floire_ii": "Floire et Blancheflor II",
+            "src_flore": "Floris et Lyriope",
+            "src_florence": "Florence de Rome",
+            "src_floriant": "Floriant et Florete",
+            "src_florim": "Florimont",
+            "src_fouke": "Fouke Fitz Warin",
+            "src_galer": "Ille et Galeron",
+            "src_gilion": "Gilion de Trasignyes",
+            "src_gilles": "Gilles de Chin",
+            "src_g_de_d": "Guillaume de Dôle",
+            "src_g_de_p": "Guillaume de Palerne",
+            "src_graal_pr": "Le Haut Livre du Graal",
+            "src_guig": "Guigemar (Marie)",
+            "src_ider": "Yder",
+            "src_ipom": "Ipomédon",
+            "src_isaie": "Isaïe le Triste",
+            "src_jaufre": "Jaufré",
+            "src_lanc_pr": "Lancelot en Prose",
+            "src_laur": "Laurin",
+            "src_mag": "La Manekine",
+            "src_meliacin": "Méliacin",
+            "src_meliador": "Méliador",
+            "src_melus": "Mélusine",
+            "src_merl_s": "Merlin (Sommer)",
+            "src_mil": "Milun (Marie)",
+            "src_mort": "Mort Artu",
+            "src_nouv": "Nouvelles du XVe s.",
+            "src_paon": "Vœux du Paon",
+            "src_paris": "Paulin Paris",
+            "src_parton": "Partonopeus",
+            "src_perc": "Perceval (Chrétien)",
+            "src_percef": "Perceforest",
+            "src_perc_cont": "Perceval Continuations",
+            "src_perl": "Perlesvaus",
+            "src_pont": "Ponthus et Sidoine",
+            "src_proph_m": "Prophéties de Merlin",
+            "src_proth": "Protheselaus",
+            "src_queste": "Queste del Saint Graal",
+            "src_rich": "Richars li Blaus",
+            "src_rig": "Rigomer",
+            "src_rose": "Roman de la Rose",
+            "src_rtr": "Romans de Table Ronde",
+            "src_saintre": "Jehan de Saintré",
+            "src_sone": "Sone de Nansay",
+            "src_thebes": "Roman de Thèbes",
+            "src_tournoi": "Tournoi de Chauvency",
+            "src_trist_b": "Tristan (Béroul)",
+            "src_trist_pr": "Tristan en Prose",
+            "src_troie": "Roman de Troie",
+            "src_troie_pr": "Troie en Prose",
+            "src_veng": "Vengeance Raguidel",
+            "src_warew": "Gui de Warewic",
+            "src_wist": "Wistasse le Moine"
+        };
+
+        // --- 2. DATA PROCESSING & NETWORK GRAPH CONSTRUCTION ---
+        const nodesMap = new Map();
+        const links = [];
+
+        rawEdges.forEach(edge => {
+            // Source Node
+            if (!nodesMap.has(edge.source)) {
+                nodesMap.set(edge.source, {
+                    id: edge.source,
+                    label: sourceMetadata[edge.source] || edge.source.replace('src_', '').toUpperCase(),
+                    type: 'source',
+                    degree: 0,
+                    connections: []
+                });
+            }
+            // Place Node
+            if (!nodesMap.has(edge.place)) {
+                const meta = placeMetadata[edge.place] || { label: edge.place, desc: "Geographical location" };
+                nodesMap.set(edge.place, {
+                    id: edge.place,
+                    label: meta.label,
+                    desc: meta.desc,
+                    type: 'place',
+                    degree: 0,
+                    connections: []
+                });
+            }
+
+            const srcNode = nodesMap.get(edge.source);
+            const plcNode = nodesMap.get(edge.place);
+
+            srcNode.degree++;
+            plcNode.degree++;
+
+            srcNode.connections.push({ node: plcNode, variant: edge.variant });
+            plcNode.connections.push({ node: srcNode, variant: edge.variant });
+
+            links.push({
+                source: edge.source,
+                target: edge.place,
+                variant: edge.variant
+            });
+        });
+
+        const allNodes = Array.from(nodesMap.values());
+
+        // --- 3. D3 FORCE SIMULATION & RENDERING ---
+        const svg = d3.select("#network-svg");
+        const container = document.getElementById("network-container");
+        let width = container.clientWidth;
+        let height = container.clientHeight;
+
+        const gGroup = svg.append("g");
+
+        // Zoom Behavior
+        const zoom = d3.zoom()
+            .scaleExtent([0.15, 4])
+            .on("zoom", (event) => {
+                gGroup.attr("transform", event.transform);
+            });
+
+        svg.call(zoom);
+
+        // Simulation Setup
+        const simulation = d3.forceSimulation()
+            .force("link", d3.forceLink().id(d => d.id).distance(70).strength(0.4))
+            .force("charge", d3.forceManyBody().strength(-220))
+            .force("center", d3.forceCenter(width / 2, height / 2))
+            .force("collision", d3.forceCollide().radius(d => getRadius(d.degree) + 12));
+
+        // Node Radius Calculation
+        function getRadius(degree) {
+            return Math.max(6, Math.min(28, 5 + Math.sqrt(degree) * 3.5));
+        }
+
+        // Color Logic
+        const SOURCE_COLOR = "#2B5B84";
+        const PLACE_COLOR = "#D95F02";
+
+        let linkSelection = gGroup.append("g").selectAll("line");
+        let nodeSelection = gGroup.append("g").selectAll("circle");
+        let labelSelection = gGroup.append("g").selectAll("text");
+
+        // Current Filter States
+        let minDegreeFilter = 1;
+        let searchQuery = "";
+        let showLabels = true;
+        let physicsEnabled = true;
+
+        function updateNetwork() {
+            // Filter nodes by degree and search
+            const filteredNodes = allNodes.filter(n => {
+                const degreePass = n.degree >= minDegreeFilter;
+                const searchPass = searchQuery === "" || 
+                    n.label.toLowerCase().includes(searchQuery) || 
+                    (n.desc && n.desc.toLowerCase().includes(searchQuery)) ||
+                    n.connections.some(c => c.variant.toLowerCase().includes(searchQuery));
+                return degreePass && searchPass;
+            });
+
+            const filteredNodeIds = new Set(filteredNodes.map(n => n.id));
+
+            const filteredLinks = links.filter(l => 
+                filteredNodeIds.has(typeof l.source === 'object' ? l.source.id : l.source) &&
+                filteredNodeIds.has(typeof l.target === 'object' ? l.target.id : l.target)
+            );
+
+            // Update Statistics Panel
+            document.getElementById("stat-nodes").innerText = filteredNodes.length;
+            document.getElementById("stat-edges").innerText = filteredLinks.length;
+
+            // Bind Links
+            linkSelection = linkSelection.data(filteredLinks, d => `${d.source.id || d.source}-${d.target.id || d.target}`);
+            linkSelection.exit().remove();
+            const linkEnter = linkSelection.enter().append("line")
+                .attr("stroke", "#475569")
+                .attr("stroke-opacity", 0.4)
+                .attr("stroke-width", 1.2);
+            linkSelection = linkEnter.merge(linkSelection);
+
+            // Bind Nodes
+            nodeSelection = nodeSelection.data(filteredNodes, d => d.id);
+            nodeSelection.exit().remove();
+            const nodeEnter = nodeSelection.enter().append("circle")
+                .attr("r", d => getRadius(d.degree))
+                .attr("fill", d => d.type === 'source' ? SOURCE_COLOR : PLACE_COLOR)
+                .attr("stroke", d => d.type === 'source' ? "#60A5FA" : "#FDBA74")
+                .attr("stroke-width", 1.5)
+                .attr("class", "cursor-pointer transition-all duration-150")
+                .call(d3.drag()
+                    .on("start", dragstarted)
+                    .on("drag", dragged)
+                    .on("end", dragended));
+
+            // Mouse Interactions
+            nodeEnter
+                .on("mouseover", handleMouseOver)
+                .on("mouseout", handleMouseOut);
+
+            nodeSelection = nodeEnter.merge(nodeSelection);
+
+            // Bind Labels
+            labelSelection = labelSelection.data(filteredNodes, d => d.id);
+            labelSelection.exit().remove();
+            const labelEnter = labelSelection.enter().append("text")
+                .text(d => d.label)
+                .attr("font-size", d => Math.max(9, Math.min(13, 8 + Math.sqrt(d.degree))))
+                .attr("fill", "#e2e8f0")
+                .attr("dx", d => getRadius(d.degree) + 5)
+                .attr("dy", ".35em")
+                .attr("pointer-events", "none")
+                .attr("class", "font-medium shadow-sm");
+            
+            labelSelection = labelEnter.merge(labelSelection);
+            labelSelection.style("display", showLabels ? "block" : "none");
+
+            // Restart simulation with new data
+            simulation.nodes(filteredNodes);
+            simulation.force("link").links(filteredLinks);
+            simulation.alpha(0.8).restart();
+        }
+
+        // --- 4. INTERACTION & HIGHLIGHT LOGIC ---
+        const tooltip = d3.select("#tooltip");
+
+        function handleMouseOver(event, d) {
+            // Highlight node & connected edges
+            const connectedSet = new Set(d.connections.map(c => c.node.id));
+            connectedSet.add(d.id);
+
+            nodeSelection.style("opacity", n => connectedSet.has(n.id) ? 1 : 0.15)
+                .attr("stroke-width", n => n.id === d.id ? 3.5 : 1.5)
+                .attr("stroke", n => n.id === d.id ? "#ffffff" : (n.type === 'source' ? "#60A5FA" : "#FDBA74"));
+
+            linkSelection.style("opacity", l => (l.source.id === d.id || l.target.id === d.id) ? 1 : 0.08)
+                .attr("stroke", l => (l.source.id === d.id || l.target.id === d.id) ? "#60A5FA" : "#475569")
+                .attr("stroke-width", l => (l.source.id === d.id || l.target.id === d.id) ? 2.2 : 1);
+
+            labelSelection.style("opacity", n => connectedSet.has(n.id) ? 1 : 0.2);
+
+            // Populate Inspector Card
+            const headerHTML = `
+                <span class="w-3 h-3 rounded-full ${d.type === 'source' ? 'bg-[#2B5B84]' : 'bg-[#D95F02]'} inline-block"></span>
+                <span>${d.label}</span>
+            `;
+
+            let bodyHTML = `
+                <div class="text-[11px] text-slate-400 mb-2">${d.type === 'source' ? 'Source Text / Romance' : d.desc}</div>
+                <div class="flex justify-between items-center bg-slate-900/80 p-1.5 rounded border border-slate-800 mb-2">
+                    <span class="text-slate-400">Total Connections:</span>
+                    <span class="font-bold text-blue-400">${d.degree}</span>
+                </div>
+                <div class="font-semibold text-slate-300 mb-1 border-b border-slate-800 pb-1">
+                    ${d.type === 'source' ? 'Connected Places & Variants:' : 'Sources citing this Place:'}
+                </div>
+                <ul class="max-h-36 overflow-y-auto space-y-1 pr-1">
+            `;
+
+            d.connections.forEach(c => {
+                bodyHTML += `
+                    <li class="flex justify-between items-center text-[11px] bg-slate-800/40 p-1 rounded">
+                        <span class="font-medium text-slate-200">${c.node.label}</span>
+                        <span class="italic text-slate-400 text-[10px]">${c.variant}</span>
+                    </li>
+                `;
+            });
+
+            bodyHTML += `</ul>`;
+
+            d3.select("#tooltip-header").html(headerHTML);
+            d3.select("#tooltip-body").html(bodyHTML);
+
+            // Position Card
+            const mouseX = event.clientX;
+            const mouseY = event.clientY;
+            const cardWidth = 280;
+            const cardHeight = 220;
+
+            let left = mouseX + 15;
+            let top = mouseY + 15;
+
+            if (left + cardWidth > window.innerWidth) left = mouseX - cardWidth - 15;
+            if (top + cardHeight > window.innerHeight) top = mouseY - cardHeight - 15;
+
+            tooltip.style("left", `${left}px`)
+                .style("top", `${top}px`)
+                .style("opacity", 1);
+        }
+
+        function handleMouseOut() {
+            nodeSelection.style("opacity", 1)
+                .attr("stroke-width", 1.5)
+                .attr("stroke", d => d.type === 'source' ? "#60A5FA" : "#FDBA74");
+
+            linkSelection.style("opacity", 0.4)
+                .attr("stroke", "#475569")
+                .attr("stroke-width", 1.2);
+
+            labelSelection.style("opacity", 1);
+
+            tooltip.style("opacity", 0);
+        }
+
+        // --- 5. DRAG BEHAVIOR ---
+        function dragstarted(event, d) {
+            if (!event.active && physicsEnabled) simulation.alphaTarget(0.3).restart();
+            d.fx = d.x;
+            d.fy = d.y;
+        }
+
+        function dragged(event, d) {
+            d.fx = event.x;
+            d.fy = event.y;
+        }
+
+        function dragended(event, d) {
+            if (!event.active && physicsEnabled) simulation.alphaTarget(0);
+            if (!physicsEnabled) {
+                d.fx = event.x;
+                d.fy = event.y;
+            } else {
+                d.fx = null;
+                d.fy = null;
+            }
+        }
+
+        // Simulation Tick
+        simulation.on("tick", () => {
+            linkSelection
+                .attr("x1", d => d.source.x)
+                .attr("y1", d => d.source.y)
+                .attr("x2", d => d.target.x)
+                .attr("y2", d => d.target.y);
+
+            nodeSelection
+                .attr("cx", d => d.x)
+                .attr("cy", d => d.y);
+
+            labelSelection
+                .attr("x", d => d.x)
+                .attr("y", d => d.y);
+        });
+
+        // --- 6. CONTROLS EVENT HANDLERS ---
+        // Search Input
+        const searchInput = document.getElementById("search-input");
+        const clearSearchBtn = document.getElementById("clear-search");
+
+        searchInput.addEventListener("input", (e) => {
+            searchQuery = e.target.value.toLowerCase().trim();
+            clearSearchBtn.classList.toggle("hidden", searchQuery === "");
+            updateNetwork();
+        });
+
+        clearSearchBtn.addEventListener("click", () => {
+            searchInput.value = "";
+            searchQuery = "";
+            clearSearchBtn.classList.add("hidden");
+            updateNetwork();
+        });
+
+        // Min Degree Slider
+        const slider = document.getElementById("degree-slider");
+        const degreeVal = document.getElementById("degree-value");
+
+        slider.addEventListener("input", (e) => {
+            minDegreeFilter = parseInt(e.target.value);
+            degreeVal.innerText = minDegreeFilter;
+            updateNetwork();
+        });
+
+        // Toggle Labels
+        document.getElementById("toggle-labels").addEventListener("change", (e) => {
+            showLabels = e.target.checked;
+            labelSelection.style("display", showLabels ? "block" : "none");
+        });
+
+        // Toggle Physics
+        document.getElementById("toggle-physics").addEventListener("change", (e) => {
+            physicsEnabled = e.target.checked;
+            if (physicsEnabled) {
+                simulation.alpha(0.3).restart();
+            } else {
+                simulation.stop();
+            }
+        });
+
+        // Reset View Controls
+        document.getElementById("reset-view-btn").addEventListener("click", resetView);
+        document.getElementById("zoom-fit").addEventListener("click", resetView);
+
+        function resetView() {
+            svg.transition().duration(750).call(
+                zoom.transform,
+                d3.zoomIdentity.translate(width / 2, height / 2).scale(0.85).translate(-width / 2, -height / 2)
+            );
+        }
+
+        document.getElementById("zoom-in").addEventListener("click", () => {
+            svg.transition().duration(300).call(zoom.scaleBy, 1.3);
+        });
+
+        document.getElementById("zoom-out").addEventListener("click", () => {
+            svg.transition().duration(300).call(zoom.scaleBy, 0.7);
+        });
+
+        // Resize Handling
+        window.addEventListener("resize", () => {
+            width = container.clientWidth;
+            height = container.clientHeight;
+            simulation.force("center", d3.forceCenter(width / 2, height / 2));
+            simulation.alpha(0.3).restart();
+        });
+
+        // Initialize Icons & Network
+        lucide.createIcons();
+        updateNetwork();
+
+        // Set Initial Fit
+        setTimeout(resetView, 300);
+
+    </script>
+</body>
+</html>
